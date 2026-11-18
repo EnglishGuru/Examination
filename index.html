@@ -5,7 +5,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<!-- Prevent automatic browser translation -->
 <meta name="google" content="notranslate">
 <meta http-equiv="Content-Language" content="en">
 <meta name="robots" content="notranslate">
@@ -201,6 +200,49 @@ textarea{
   margin-bottom:12px;
 }
 
+/* LISTENING AUDIO PLAYER */
+
+.listening-box{
+  background:#f8f9fe;
+  border:1px solid var(--line);
+  border-radius:17px;
+  padding:18px;
+  margin:18px 0 22px;
+}
+
+.listening-label{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-weight:600;
+  font-size:14px;
+  margin-bottom:10px;
+  color:var(--ink);
+}
+
+.listening-icon{
+  width:38px;
+  height:38px;
+  border-radius:12px;
+  display:grid;
+  place-items:center;
+  background:#eef0ff;
+  font-size:19px;
+}
+
+.listening-box audio{
+  display:block;
+  width:100%;
+  margin:12px 0 8px;
+}
+
+.listening-note{
+  color:var(--mute);
+  font-size:12px;
+  line-height:1.6;
+  margin:0;
+}
+
 .nav{
   display:flex;
   gap:12px;
@@ -353,7 +395,13 @@ const CONFIG = {
   MAX_AUDIO_MB: 12,
   MAX_RECORD_SECONDS: 180,
 
-  LEVEL: 'A1'
+  LEVEL: 'A1',
+
+  // Listening audio files
+  LISTENING_AUDIO: {
+    passage1: 'https://res.cloudinary.com/blvvsjgf/video/upload/v1795031006/Listening_Passage_1.wav',
+    passage2: 'https://res.cloudinary.com/blvvsjgf/video/upload/v1795031013/Listening_Passage_2.wav'
+  }
 };
 
 
@@ -629,6 +677,58 @@ function renderStart(){
 
 
 /* =========================================
+   LISTENING PLAYER
+   ========================================= */
+
+function getListeningPlayer(title){
+
+  const normalizedTitle = String(title || '').toLowerCase();
+
+  let audioUrl = '';
+  let passageTitle = '';
+
+  if(/listening\s*passage\s*1/.test(normalizedTitle)){
+
+    audioUrl = CONFIG.LISTENING_AUDIO.passage1;
+    passageTitle = 'Listening Passage 1';
+
+  }else if(/listening\s*passage\s*2/.test(normalizedTitle)){
+
+    audioUrl = CONFIG.LISTENING_AUDIO.passage2;
+    passageTitle = 'Listening Passage 2';
+
+  }else{
+
+    return '';
+  }
+
+  return `
+    <div class="listening-box">
+
+      <div class="listening-label">
+        <span class="listening-icon">🎧</span>
+        <span>${passageTitle} – Audio</span>
+      </div>
+
+      <audio
+        controls
+        preload="metadata"
+        controlsList="nodownload"
+      >
+        <source src="${esc(audioUrl)}" type="audio/wav">
+        Your browser does not support audio playback.
+      </audio>
+
+      <p class="listening-note">
+        Listen carefully to the audio, then answer the questions below.
+      </p>
+
+    </div>
+  `;
+}
+
+
+/* =========================================
    RENDER QUESTION
    ========================================= */
 
@@ -667,6 +767,8 @@ function renderStep(){
 
     const item = current.item;
 
+    const listeningPlayer = getListeningPlayer(item.title);
+
     app.innerHTML = `
       <div class="card">
 
@@ -674,9 +776,13 @@ function renderStep(){
 
         <h2>${esc(item.title || '')}</h2>
 
-        <div class="description">
-          ${esc(item.helpText || '')}
-        </div>
+        ${
+          item.helpText
+            ? `<div class="description">${esc(item.helpText)}</div>`
+            : ''
+        }
+
+        ${listeningPlayer}
 
         <div class="nav">
           <button class="btn" id="continue">
@@ -691,6 +797,8 @@ function renderStep(){
       step++;
       renderStep();
     };
+
+    window.scrollTo(0,0);
 
     return;
   }
