@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en" translate="no" class="notranslate">
 <head>
@@ -383,7 +382,7 @@ audio{width:100%;margin:10px 0}
 
 /* =========================================
    CONFIGURATION
-   ========================================= */
+========================================= */
 
 const CONFIG = {
   APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbw7e8J3quh2BcTfavZbYmgtIi5dXac0Vs2skvHNmTQzoJCevx1JL5efqezMkH2YPJ8DXw/exec',
@@ -397,7 +396,6 @@ const CONFIG = {
 
   LEVEL: 'A1',
 
-  // Listening audio files
   LISTENING_AUDIO: {
     passage1: 'https://res.cloudinary.com/blvvsjgf/video/upload/v1795031006/Listening_Passage_1.wav',
     passage2: 'https://res.cloudinary.com/blvvsjgf/video/upload/v1795031013/Listening_Passage_2.wav'
@@ -407,7 +405,7 @@ const CONFIG = {
 
 /* =========================================
    GLOBAL VARIABLES
-   ========================================= */
+========================================= */
 
 const app = document.getElementById('app');
 
@@ -429,7 +427,7 @@ let submitting = false;
 
 /* =========================================
    HELPERS
-   ========================================= */
+========================================= */
 
 function esc(value){
   return String(value ?? '').replace(/[&<>"']/g,c=>({
@@ -459,7 +457,7 @@ function makeToken(){
 
 /* =========================================
    GOOGLE APPS SCRIPT JSONP
-   ========================================= */
+========================================= */
 
 function jsonp(action,extra={}){
 
@@ -513,12 +511,12 @@ function jsonp(action,extra={}){
 
 /* =========================================
    QUESTION CLASSIFICATION
-   ========================================= */
+========================================= */
 
 function classify(item){
 
   const text =
-    (item.title + ' ' + item.helpText).toLowerCase();
+    ((item.title || '') + ' ' + (item.helpText || '')).toLowerCase();
 
   if(/speaking|voice|recording|pronunciation/.test(text)){
     return 'speaking';
@@ -537,8 +535,65 @@ function classify(item){
 
 
 /* =========================================
+   LISTENING PASSAGE DETECTION
+========================================= */
+
+function getListeningPassageNumber(item){
+
+  const text = (
+    (item.title || '') + ' ' +
+    (item.helpText || '')
+  ).toLowerCase();
+
+  if(/listening\s*passage\s*1/.test(text)){
+    return 1;
+  }
+
+  if(/listening\s*passage\s*2/.test(text)){
+    return 2;
+  }
+
+  return 0;
+}
+
+
+function getListeningPlayer(passageNumber){
+
+  if(passageNumber !== 1 && passageNumber !== 2){
+    return '';
+  }
+
+  const audioUrl = passageNumber === 1
+    ? CONFIG.LISTENING_AUDIO.passage1
+    : CONFIG.LISTENING_AUDIO.passage2;
+
+  const passageTitle = `Listening Passage ${passageNumber}`;
+
+  return `
+    <div class="listening-box">
+
+      <div class="listening-label">
+        <span class="listening-icon">🎧</span>
+        <span>${passageTitle} – Audio</span>
+      </div>
+
+      <audio controls preload="metadata">
+        <source src="${esc(audioUrl)}" type="audio/wav">
+        Your browser does not support audio playback.
+      </audio>
+
+      <p class="listening-note">
+        Listen carefully to the audio, then answer the questions below.
+      </p>
+
+    </div>
+  `;
+}
+
+
+/* =========================================
    BUILD EXAM STEPS
-   ========================================= */
+========================================= */
 
 function buildSteps(){
 
@@ -546,6 +601,12 @@ function buildSteps(){
   nameItem = null;
 
   let readingPassage = '';
+
+  // Keeps track of the current Listening passage
+  let currentListeningPassage = 0;
+
+  // Prevents adding the same audio player more than once
+  const listeningPassagesShown = new Set();
 
   formData.items.forEach(item=>{
 
@@ -557,6 +618,14 @@ function buildSteps(){
       const title = (item.title || '').trim();
       const description = (item.helpText || '').trim();
 
+      // Detect Listening passage labels in section title or description
+      const detectedListeningPassage =
+        getListeningPassageNumber(item);
+
+      if(detectedListeningPassage){
+        currentListeningPassage = detectedListeningPassage;
+      }
+
       if(/^reading\b/i.test(title)){
 
         readingPassage =
@@ -564,11 +633,21 @@ function buildSteps(){
 
       }else if(title || description){
 
-        steps.push({
+        const sectionStep = {
           kind:'section',
           item:item
-        });
+        };
 
+        // Add the audio to the matching Listening section
+        if(
+          detectedListeningPassage &&
+          !listeningPassagesShown.has(detectedListeningPassage)
+        ){
+          sectionStep.listeningPassage = detectedListeningPassage;
+          listeningPassagesShown.add(detectedListeningPassage);
+        }
+
+        steps.push(sectionStep);
       }
 
       return;
@@ -594,15 +673,36 @@ function buildSteps(){
       return;
     }
 
+    // Check whether the passage label appears in the question itself
+    const detectedListeningPassage =
+      getListeningPassageNumber(item);
+
+    if(detectedListeningPassage){
+      currentListeningPassage = detectedListeningPassage;
+    }
+
     const isReadingQuestion =
       /^reading\s*\d+/i.test(item.title || '');
 
-    steps.push({
+    const questionStep = {
       kind:kind,
       item:item,
       readingPassage:
         isReadingQuestion ? readingPassage : ''
-    });
+    };
+
+    // If the audio has not appeared yet, attach it to this question.
+    // This handles forms where the passage label is inside the question
+    // title or help text instead of a separate section heading.
+    if(
+      currentListeningPassage &&
+      !listeningPassagesShown.has(currentListeningPassage)
+    ){
+      questionStep.listeningPassage = currentListeningPassage;
+      listeningPassagesShown.add(currentListeningPassage);
+    }
+
+    steps.push(questionStep);
 
   });
 
@@ -612,7 +712,7 @@ function buildSteps(){
 
 /* =========================================
    START SCREEN
-   ========================================= */
+========================================= */
 
 function renderStart(){
 
@@ -677,60 +777,8 @@ function renderStart(){
 
 
 /* =========================================
-   LISTENING PLAYER
-   ========================================= */
-
-function getListeningPlayer(title){
-
-  const normalizedTitle = String(title || '').toLowerCase();
-
-  let audioUrl = '';
-  let passageTitle = '';
-
-  if(/listening\s*passage\s*1/.test(normalizedTitle)){
-
-    audioUrl = CONFIG.LISTENING_AUDIO.passage1;
-    passageTitle = 'Listening Passage 1';
-
-  }else if(/listening\s*passage\s*2/.test(normalizedTitle)){
-
-    audioUrl = CONFIG.LISTENING_AUDIO.passage2;
-    passageTitle = 'Listening Passage 2';
-
-  }else{
-
-    return '';
-  }
-
-  return `
-    <div class="listening-box">
-
-      <div class="listening-label">
-        <span class="listening-icon">🎧</span>
-        <span>${passageTitle} – Audio</span>
-      </div>
-
-      <audio
-        controls
-        preload="metadata"
-        controlsList="nodownload"
-      >
-        <source src="${esc(audioUrl)}" type="audio/wav">
-        Your browser does not support audio playback.
-      </audio>
-
-      <p class="listening-note">
-        Listen carefully to the audio, then answer the questions below.
-      </p>
-
-    </div>
-  `;
-}
-
-
-/* =========================================
    RENDER QUESTION
-   ========================================= */
+========================================= */
 
 function renderStep(){
 
@@ -740,6 +788,7 @@ function renderStep(){
   ){
 
     const item = steps[step].item;
+    const listeningPassage = steps[step].listeningPassage || 0;
 
     step++;
 
@@ -747,7 +796,8 @@ function renderStep(){
 
       steps.splice(step,0,{
         kind:'sectionDisplay',
-        item:item
+        item:item,
+        listeningPassage:listeningPassage
       });
 
     }
@@ -763,11 +813,14 @@ function renderStep(){
   const current = steps[step];
 
 
+  /* SECTION DISPLAY */
+
   if(current.kind === 'sectionDisplay'){
 
     const item = current.item;
 
-    const listeningPlayer = getListeningPlayer(item.title);
+    const listeningPlayer =
+      getListeningPlayer(current.listeningPassage);
 
     app.innerHTML = `
       <div class="card">
@@ -804,6 +857,8 @@ function renderStep(){
   }
 
 
+  /* QUESTION DISPLAY */
+
   const item = current.item;
   const kind = current.kind;
   const id = item.id;
@@ -838,6 +893,12 @@ function renderStep(){
         }
       </span>
   `;
+
+
+  // Listening audio appears before the first question of each passage
+  if(current.listeningPassage){
+    body += getListeningPlayer(current.listeningPassage);
+  }
 
 
   if(current.readingPassage){
@@ -1177,7 +1238,7 @@ function renderStep(){
 
 /* =========================================
    SPEAKING RECORDER
-   ========================================= */
+========================================= */
 
 function drawRecorder(id){
 
@@ -1263,7 +1324,7 @@ function drawRecorder(id){
 
 /* =========================================
    START RECORDING
-   ========================================= */
+========================================= */
 
 function startRecording(id){
 
@@ -1388,7 +1449,7 @@ function startRecording(id){
 
 /* =========================================
    STOP RECORDING
-   ========================================= */
+========================================= */
 
 function stopRecording(){
 
@@ -1406,7 +1467,7 @@ function stopRecording(){
 
 /* =========================================
    UPLOAD RECORDING TO CLOUDINARY
-   ========================================= */
+========================================= */
 
 async function uploadRecording(record){
 
@@ -1450,7 +1511,7 @@ async function uploadRecording(record){
 
 /* =========================================
    CHECK GOOGLE SUBMISSION STATUS
-   ========================================= */
+========================================= */
 
 async function waitForSubmission(token){
 
@@ -1491,7 +1552,7 @@ async function waitForSubmission(token){
 
 /* =========================================
    SUBMIT EXAM
-   ========================================= */
+========================================= */
 
 async function submitExam(){
 
@@ -1730,7 +1791,7 @@ async function submitExam(){
 
 /* =========================================
    INITIALIZE EXAM
-   ========================================= */
+========================================= */
 
 async function init(){
 
