@@ -70,40 +70,64 @@
 </div>
 
 <script>
-// ⬇️ الإعدادات: الصقي القيم الأربعة دي (الشرح في الخطوات)
+// إعدادات الربط: Google Forms + Cloudinary
 var CONFIG = {
-  FORM_URL: 'PASTE_GOOGLE_FORM_LINK_HERE',        // رابط الفورم الطويل (بينتهي بـ viewform)
-  PREFILLED: 'PASTE_PREFILLED_LINK_HERE',         // الرابط الجاهز من Get pre-filled link
-  CLOUD_NAME: 'PASTE_CLOUDINARY_CLOUD_NAME',      // اسم الـ cloud في Cloudinary
-  UPLOAD_PRESET: 'PASTE_UPLOAD_PRESET_NAME'       // اسم الـ upload preset (Unsigned)
+  FORM_URL: 'https://docs.google.com/forms/d/e/1FAIpQLSc47C8_KVyASIyRlJTjfWXZVaTiwSehr4H1qTuFDhjbI3T11A/viewform',
+  CLOUD_NAME: 'blvvsjgf',
+  UPLOAD_PRESET: 'mytutor_a1_audio'
 };
 
-function entryMap() {
-  var m = {}, re = /entry\.(\d+)=([^&#]*)/g, x;
-  while ((x = re.exec(CONFIG.PREFILLED))) m[decodeURIComponent(x[2])] = x[1];
-  return m;
-}
-function uploadAudio() {
+// معرّفات الحقول المستخرجة من رابط Google Forms المعبأ مسبقاً
+var ENTRY = {
+  name: '1909788611',
+  q1: '1449488777', q2: '1840221429', q3: '2013873777',
+  q4: '778735832', q5: '624612413', q6: '1282357991',
+  q7: '116165760', q8: '603403539', q9: '1339044796', q10: '918196173',
+  r1: '884001251', r2: '367986078', r3: '1585466092',
+  r4: '780582323', r5: '2122543221',
+  writing: '698979387', v1: '230461900', v2: '1815095148', v3: '1379273935'
+};
+
+function uploadAudioBlob(blob, label) {
   var fd = new FormData();
-  fd.append('file', audio.blob, 'voice'); fd.append('upload_preset', CONFIG.UPLOAD_PRESET); fd.append('folder', 'a1-benchmark');
+  fd.append('file', blob, label + '-' + Date.now());
+  fd.append('upload_preset', CONFIG.UPLOAD_PRESET);
+  fd.append('folder', 'a1-benchmark');
   return fetch('https://api.cloudinary.com/v1_1/' + CONFIG.CLOUD_NAME + '/video/upload', {method: 'POST', body: fd})
-    .then(function (r) { return r.json(); })
-    .then(function (j) { if (!j.secure_url) throw new Error('audio upload'); return j.secure_url; });
+    .then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok || !j.secure_url) throw new Error(j.error && j.error.message ? j.error.message : 'تعذر رفع التسجيل ' + label);
+        return j.secure_url;
+      });
+    });
 }
+
 function postForm(fields) {
-  var map = entryMap(), body = new URLSearchParams();
-  Object.keys(fields).forEach(function (k) {
-    if (!map[k]) throw new Error('field "' + k + '" not found in PREFILLED link');
-    body.append('entry.' + map[k], fields[k]);
+  var body = new URLSearchParams();
+  Object.keys(fields).forEach(function (key) {
+    if (!ENTRY[key]) throw new Error('معرّف الحقل غير موجود: ' + key);
+    body.append('entry.' + ENTRY[key], fields[key]);
   });
-  var url = CONFIG.FORM_URL.replace(/\/viewform.*$/, '') + '/formResponse';
+  var url = CONFIG.FORM_URL.replace(/\/viewform(?:\?.*)?$/, '') + '/formResponse';
+  // Google Forms لا يعيد تأكيداً قابلاً للقراءة من المتصفح بسبب no-cors.
   return fetch(url, {method: 'POST', mode: 'no-cors', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: body});
 }
+
 function submitAll() {
-  return uploadAudio().then(function (link) {
-    var L = ['A', 'B', 'C', 'D'], f = {name: info.name, cls: info.cls, writing: writing, voice: link};
-    Object.keys(ans).forEach(function (k) { f[k] = L[ans[k]]; });
-    return postForm(f);
+  var uploads = [
+    uploadAudioBlob(voiceRecordings[0].blob, 'V1'),
+    uploadAudioBlob(voiceRecordings[1].blob, 'V2'),
+    uploadAudioBlob(voiceRecordings[2].blob, 'V3')
+  ];
+  return Promise.all(uploads).then(function (links) {
+    var fields = {name: info.name, writing: writing, v1: links[0], v2: links[1], v3: links[2]};
+    Object.keys(ans).forEach(function (key) {
+      var q = Q.find(function (item) { return item[0] === key; });
+      if (!q || ans[key] === undefined) throw new Error('لم تتم الإجابة عن كل أسئلة الاختيار من متعدد.');
+      // نرسل نص الاختيار كما هو، وليس A/B/C/D، ليتطابق مع خيارات Google Forms.
+      fields[key] = q[3][ans[key]];
+    });
+    return postForm(fields);
   });
 }
 var MODE = 'student';
@@ -130,8 +154,14 @@ var app = document.getElementById('app');
     ['r4', R, 'Is the apartment far from the supermarket?', ['Yes', 'No']],
     ['r5', R, 'When does Sara invite Mona to visit her?', ['Next Sunday', 'Tomorrow', 'Next Friday']]
   ];
-  var TOTAL = Q.length + 2; // + writing + voice
-  var step = -1, ans = {}, info = {name: '', cls: ''}, writing = '', audio = null, recording = false, rec, chunks = [], t0, tick, stream;
+  var TOTAL = Q.length + 4; // + Writing + 3 Speaking recordings
+  var step = -1, ans = {}, info = {name: ''}, writing = '';
+  var voicePrompts = [
+    {id:'V1', title:'Speaking Task 1', prompt:'Tell me your phone number.'},
+    {id:'V2', title:'Speaking Task 2', prompt:'What did you do yesterday and today?'},
+    {id:'V3', title:'Speaking Task 3', prompt:'What are you wearing today? What food do you like or dislike, and why? How do you come to class?'}
+  ];
+  var voiceRecordings = [null, null, null], currentVoiceIndex = 0, recording = false, rec, chunks = [], t0, tick, stream;
 
   function pickMime() {
     var c = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg'];
@@ -140,6 +170,7 @@ var app = document.getElementById('app');
   }
   function stopRec() { if (rec && rec.state !== 'inactive') rec.stop(); }
   function startRec() {
+    var index = currentVoiceIndex;
     if (!navigator.mediaDevices || !window.MediaRecorder) { speakErr(); return; }
     navigator.mediaDevices.getUserMedia({audio: true}).then(function (s) {
       stream = s; chunks = []; var mt = pickMime();
@@ -149,7 +180,7 @@ var app = document.getElementById('app');
         clearInterval(tick); stream.getTracks().forEach(function (t) { t.stop(); });
         var type = String(rec.mimeType || mt || 'audio/webm').split(';')[0];
         var blob = new Blob(chunks, {type: type});
-        audio = {blob: blob, url: URL.createObjectURL(blob), mime: type};
+        voiceRecordings[index] = {blob: blob, url: URL.createObjectURL(blob), mime: type};
         recording = false; drawSpeak();
       };
       rec.start(); recording = true; t0 = Date.now(); drawSpeak();
@@ -162,18 +193,19 @@ var app = document.getElementById('app');
   }
   function speakErr() {
     var e = document.getElementById('serr');
-    if (e) e.textContent = 'المايك مقفول. اضغطي على أيقونة القفل 🔒 جنب الرابط واسمحي بالميكروفون، وجرّبي تاني.';
+    if (e) e.textContent = 'لا يمكن الوصول إلى الميكروفون. اسمحي باستخدامه من إعدادات المتصفح ثم حاولي مرة أخرى.';
   }
   function drawSpeak() {
     var box = document.getElementById('rc'); if (!box) return;
     var sb = document.getElementById('sb');
+    var audio = voiceRecordings[currentVoiceIndex];
     if (recording) {
       box.innerHTML = '<div class="mic rec" id="mic">⏹</div><div class="tm" id="tm">0:00</div><div class="hint">Recording… tap to stop</div>';
       document.getElementById('mic').onclick = stopRec;
     } else if (audio) {
       box.innerHTML = '<div class="hint">✅ Your recording is ready. Listen to it:</div><audio controls src="' + audio.url + '"></audio>' +
         '<button class="ghost" id="again">🔄 Record again</button>';
-      document.getElementById('again').onclick = function () { audio = null; drawSpeak(); };
+      document.getElementById('again').onclick = function () { voiceRecordings[currentVoiceIndex] = null; drawSpeak(); };
     } else {
       box.innerHTML = '<div class="mic" id="mic">🎙️</div><div class="hint">Tap to start recording (max 3 min)</div>' +
         '<label class="up">📎 Or upload a voice note<input type="file" id="fl" accept="audio/*" hidden></label>';
@@ -181,7 +213,7 @@ var app = document.getElementById('app');
       document.getElementById('fl').onchange = function () {
         var f = this.files[0]; if (!f) return;
         if (f.size > 12 * 1024 * 1024) { document.getElementById('serr').textContent = 'الملف كبير، لازم يكون أقل من 12MB.'; return; }
-        audio = {blob: f, url: URL.createObjectURL(f), mime: f.type || 'audio/mpeg'}; drawSpeak();
+        voiceRecordings[currentVoiceIndex] = {blob: f, url: URL.createObjectURL(f), mime: f.type || 'audio/mpeg'}; drawSpeak();
       };
     }
     if (sb) sb.disabled = !audio || recording;
@@ -197,15 +229,13 @@ var app = document.getElementById('app');
       setProg(0);
       app.innerHTML = '<div class="card"><span class="chip">Written test • 50 marks</span><h1>A1 Benchmark Pre-Exam</h1>' +
         '<p class="sub rtl">اكتبي بياناتك وابدئي الامتحان. اختاري إجابة واحدة لكل سؤال.</p>' +
-        '<label class="f">Full name</label><input id="nm" value="' + info.name + '" autocomplete="off">' +
-        '<label class="f">Class</label><input id="cl" value="' + info.cls + '" autocomplete="off">' +
+        '<label class="f">Full name</label><input id="nm" value="' + info.name + '" autocomplete="name">' +
         '<div class="nav"><button class="btn" id="go" disabled>Start exam →</button></div></div>';
       var chk = function () {
         info.name = document.getElementById('nm').value.trim();
-        info.cls = document.getElementById('cl').value.trim();
-        document.getElementById('go').disabled = !(info.name && info.cls);
+        document.getElementById('go').disabled = !info.name;
       };
-      document.getElementById('nm').oninput = chk; document.getElementById('cl').oninput = chk; chk();
+      document.getElementById('nm').oninput = chk; chk();
       document.getElementById('go').onclick = function () { step = 0; render(); };
       return;
     }
@@ -236,7 +266,7 @@ var app = document.getElementById('app');
       return;
     }
     if (step === Q.length) {
-      setProg(TOTAL);
+      setProg(Q.length + 1);
       app.innerHTML = '<div class="card"><span class="chip">Guided Writing • 15 marks</span>' +
         '<h2>Write a short message (4–5 sentences) describing your home or apartment.</h2>' +
         '<p class="sub">Use words like: big / small, rooms, living room, kitchen, comfortable</p>' +
@@ -250,22 +280,24 @@ var app = document.getElementById('app');
       sb.onclick = function () { step++; render(); };
       return;
     }
-    if (step === Q.length + 1) {
-      setProg(TOTAL);
-      app.innerHTML = '<div class="card"><span class="chip">Speaking • Voice note</span>' +
-        '<h2>Record yourself answering these questions</h2>' +
-        '<ol class="say"><li>Tell me your phone number.</li><li>What did you do yesterday and today?</li>' +
-        '<li>What are you wearing today?</li><li>What food do you like? What food do you dislike? Why?</li>' +
-        '<li>How do you come to class?</li></ol>' +
+    if (step >= Q.length + 1 && step <= Q.length + 3) {
+      currentVoiceIndex = step - Q.length - 1;
+      var task = voicePrompts[currentVoiceIndex];
+      setProg(Q.length + 1 + currentVoiceIndex);
+      var isLastVoice = currentVoiceIndex === 2;
+      app.innerHTML = '<div class="card"><span class="chip">Speaking • ' + task.id + ' of 3</span>' +
+        '<h2>' + task.title + '</h2><p class="sub">' + task.prompt + '</p>' +
         '<div class="recbox" id="rc"></div><div class="err" id="serr"></div>' +
-        '<div class="nav"><button class="ghost" id="bk">← Back</button><button class="btn" id="sb" disabled>Submit exam ✓</button></div></div>';
+        '<div class="nav"><button class="ghost" id="bk">← Back</button><button class="btn" id="sb" disabled>' + (isLastVoice ? 'Submit exam ✓' : 'Next speaking task →') + '</button></div></div>';
       drawSpeak();
-      document.getElementById('bk').onclick = function () { stopRec(); step--; render(); };
+      document.getElementById('bk').onclick = function () { if (recording) stopRec(); step--; render(); };
       document.getElementById('sb').onclick = function () {
-        var sb = this; sb.disabled = true; sb.textContent = 'Uploading…';
+        if (!isLastVoice) { step++; render(); return; }
+        var sb = this; sb.disabled = true; sb.textContent = 'Uploading 3 recordings…';
         submitAll().then(function () { step = 99; render(); })
           .catch(function (e) {
-            document.getElementById('serr').textContent = 'حصلت مشكلة في الإرسال، جرّبي تاني. (' + e.message + ')';
+            var err = document.getElementById('serr');
+            if (err) err.textContent = 'حصلت مشكلة أثناء رفع التسجيلات أو تجهيز الإرسال. لم نعرض رسالة نجاح. ' + e.message;
             sb.disabled = false; sb.textContent = 'Submit exam ✓';
           });
       };
