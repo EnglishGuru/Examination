@@ -1,8 +1,15 @@
+
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" translate="no" class="notranslate">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- Prevent automatic browser translation -->
+<meta name="google" content="notranslate">
+<meta http-equiv="Content-Language" content="en">
+<meta name="robots" content="notranslate">
+
 <title>Benchmark Exam</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
@@ -183,9 +190,7 @@ textarea{
   white-space:pre-wrap;
 }
 
-.passage{
-  font-size:15px;
-}
+.passage{font-size:15px}
 
 .section-title{
   font-size:13px;
@@ -306,9 +311,9 @@ audio{width:100%;margin:10px 0}
 </style>
 </head>
 
-<body>
+<body translate="no" class="notranslate">
 
-<div class="wrap">
+<div class="wrap notranslate" translate="no">
 
   <div class="top">
     <div class="logo">
@@ -322,7 +327,7 @@ audio{width:100%;margin:10px 0}
     <i id="prog"></i>
   </div>
 
-  <main id="app">
+  <main id="app" translate="no" class="notranslate">
     <div class="card center">
       <div class="loading-spinner"></div>
       <h2>Loading exam…</h2>
@@ -485,8 +490,6 @@ function classify(item){
 
 /* =========================================
    BUILD EXAM STEPS
-   READING PASSAGE IS ATTACHED TO EACH
-   READING QUESTION
    ========================================= */
 
 function buildSteps(){
@@ -631,8 +634,6 @@ function renderStart(){
 
 function renderStep(){
 
-  // Display other section headers normally.
-  // Reading headers are deliberately not separate steps.
   while(
     step < steps.length &&
     steps[step].kind === 'section'
@@ -731,7 +732,6 @@ function renderStep(){
   `;
 
 
-  // Reading passage appears before EACH reading question.
   if(current.readingPassage){
 
     body += `
@@ -761,8 +761,6 @@ function renderStep(){
   const saved = answers[id];
 
 
-  /* SPEAKING */
-
   if(kind === 'speaking'){
 
     body += `
@@ -777,8 +775,6 @@ function renderStep(){
 
   }
 
-
-  /* MULTIPLE CHOICE / LIST */
 
   else if(
     item.type === 'MULTIPLE_CHOICE' ||
@@ -802,8 +798,6 @@ function renderStep(){
   }
 
 
-  /* CHECKBOX */
-
   else if(item.type === 'CHECKBOX'){
 
     (item.choices || []).forEach((choice,index)=>{
@@ -826,8 +820,6 @@ function renderStep(){
   }
 
 
-  /* WRITING */
-
   else if(
     item.type === 'PARAGRAPH_TEXT' ||
     kind === 'writing'
@@ -842,8 +834,6 @@ function renderStep(){
 
   }
 
-
-  /* SCALE */
 
   else if(item.type === 'SCALE'){
 
@@ -869,8 +859,6 @@ function renderStep(){
 
   }
 
-
-  /* TEXT */
 
   else{
 
@@ -1244,7 +1232,6 @@ function startRecording(id){
           recorderState = null;
         }
 
-        // Update the current question only if it is still visible.
         if(document.getElementById('recbox')){
           drawRecorder(id);
         }
@@ -1433,7 +1420,6 @@ async function submitExam(){
     const answersToSend = [];
 
 
-    // Full Name
     if(nameItem && nameValue.trim()){
 
       answersToSend.push({
@@ -1444,7 +1430,6 @@ async function submitExam(){
     }
 
 
-    // Other non-speaking answers
     for(const question of questions){
 
       const id = question.item.id;
@@ -1471,7 +1456,6 @@ async function submitExam(){
     }
 
 
-    // Make sure all three Speaking recordings exist.
     const speakingQuestions = questions.filter(
       question=>question.kind === 'speaking'
     );
@@ -1494,7 +1478,6 @@ async function submitExam(){
       document.getElementById('submitStatus');
 
 
-    // Upload all three recordings in parallel.
     if(statusElement){
 
       statusElement.textContent =
@@ -1534,8 +1517,6 @@ async function submitExam(){
     }
 
 
-    // Google Apps Script receives the submission.
-    // no-cors hides its response, so we verify through the status endpoint.
     await fetch(
       CONFIG.APPS_SCRIPT_URL,
       {
@@ -1561,7 +1542,6 @@ async function submitExam(){
     }
 
 
-    // Do not show completion until Google Apps Script confirms the save.
     const confirmation =
       await waitForSubmission(submissionToken);
 
@@ -1629,7 +1609,6 @@ async function submitExam(){
 
     document.getElementById('retry').onclick = ()=>{
 
-      // A fresh token is used for a new attempt after a confirmed error.
       submissionToken = null;
 
       submitExam();
